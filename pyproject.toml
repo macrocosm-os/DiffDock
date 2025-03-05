@@ -31,10 +31,10 @@ torch-sparse = { version = "0.6.16+pt113cu117", source = "pytorch-geometric" }
 torch-spline-conv = { version = "1.2.1+pt113cu117", source = "pytorch-geometric"}
 torchmetrics = "0.11.0"
 
-[[tool.poetry.source]]
-name = "pytorch"
-url = "https://download.pytorch.org/whl/cu117"
-priority = "explicit"
+#[[tool.poetry.source]]
+#name = "pytorch"
+#url = "https://download.pytorch.org/whl/cu117"
+#priority = "explicit"
 
 [[tool.poetry.source]]
 name = "pytorch-geometric"
