@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse
 
+import uvicorn
 from inference import main as inference_main, get_parser as inference_get_parser
 
 app = FastAPI()
@@ -51,3 +52,6 @@ async def infer(
         raise HTTPException(status_code=404, detail="Output file not found.")
 
     return FileResponse(output_path, media_type="chemical/x-sdf", filename=f"{complex_name}_result.sdf")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

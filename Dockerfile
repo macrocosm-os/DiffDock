@@ -1,60 +1,52 @@
-# Stage 1: Build Environment Setup
-FROM nvidia/cuda:11.7.1-devel-ubuntu22.04 AS builder
+FROM rbgcsail/diffdock
 
-RUN apt-get update -y && apt-get install -y gcc wget curl git tar bzip2 unzip && rm -rf /var/lib/apt/lists/*
+# Create necessary directories if they don't exist
+RUN mkdir -p /home/appuser/bin
 
-# Create a user
-ENV APPUSER="appuser"
-ENV HOME=/home/$APPUSER
-RUN useradd -m -u 1000 $APPUSER
-USER $APPUSER
-WORKDIR $HOME
+# First, create a place to copy files temporarily
+WORKDIR /tmp/diffdock_files
 
-ENV ENV_NAME="diffdock"
-ENV DIR_NAME="DiffDock"
+# Copy our files here first
+COPY . /tmp/diffdock_files
 
-# Install micromamba
-RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj bin/micromamba
-ENV PATH=$HOME/bin:$HOME/.local/bin:$PATH
+# Find where the DiffDock code is located and copy our infer.py there
+RUN echo '#!/bin/bash' > /tmp/find_diffdock.sh && \
+    echo 'DIFFDOCK_DIR=$(find /home/appuser -name "DiffDock" -type d || find /home/appuser -name "diffdock" -type d || echo "/home/appuser/DiffDock")' >> /tmp/find_diffdock.sh && \
+    echo 'echo $DIFFDOCK_DIR' >> /tmp/find_diffdock.sh && \
+    chmod +x /tmp/find_diffdock.sh && \
+    DIFFDOCK_DIR=$(/tmp/find_diffdock.sh) && \
+    mkdir -p $DIFFDOCK_DIR && \
+    cp /tmp/diffdock_files/infer.py $DIFFDOCK_DIR/ && \
+    mkdir -p $DIFFDOCK_DIR/results $DIFFDOCK_DIR/test_folding && \
+    echo "export DIFFDOCK_DIR=$DIFFDOCK_DIR" > /home/appuser/.diffdock_path
 
-# Copy and create Conda environment
-ENV ENV_FILE_NAME=environment.yml
-COPY --chown=$APPUSER:$APPUSER ./$ENV_FILE_NAME .
-RUN ~/bin/micromamba env create --file $ENV_FILE_NAME && ~/bin/micromamba clean -afy --quiet
+# Install micromamba if it's not already installed
+RUN if [ ! -f /home/appuser/bin/micromamba ]; then \
+    curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj -C /home/appuser/bin micromamba && \
+    chmod +x /home/appuser/bin/micromamba; \
+    fi
 
-# Copy application code
-COPY --chown=$APPUSER:$APPUSER . $HOME/$DIR_NAME
+# Make sure environment variables are set
+ENV PATH=/home/appuser/bin:$PATH
+ENV MAMBA_ROOT_PREFIX=/home/appuser/micromamba
 
+# Initialize micromamba
+RUN /home/appuser/bin/micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX
 
-# Stage 2: Runtime Environment
-FROM nvidia/cuda:11.7.1-runtime-ubuntu22.04
+# Expose ports for API and UI
+EXPOSE 7860 8000 8501
 
-# Create user and setup environment
-ENV APPUSER="appuser"
-ENV HOME=/home/$APPUSER
-RUN useradd -m -u 1000 $APPUSER
-USER $APPUSER
-WORKDIR $HOME
+# Create a simple startup script
+RUN echo '#!/bin/bash' > /home/appuser/start.sh && \
+    echo 'source /home/appuser/.diffdock_path' >> /home/appuser/start.sh && \
+    echo 'echo ""' >> /home/appuser/start.sh && \
+    echo 'echo "==============================================="' >> /home/appuser/start.sh && \
+    echo 'echo "Setting up DiffDock API server..."' >> /home/appuser/start.sh && \
+    echo 'echo "==============================================="' >> /home/appuser/start.sh && \
+    echo 'echo ""' >> /home/appuser/start.sh && \
+    echo 'cd $DIFFDOCK_DIR' >> /home/appuser/start.sh && \
+    echo '/home/appuser/bin/micromamba run -n diffdock python -m uvicorn infer:app --host 0.0.0.0 --port 8000' >> /home/appuser/start.sh && \
+    chmod +x /home/appuser/start.sh
 
-ENV ENV_NAME="diffdock"
-ENV DIR_NAME="DiffDock"
-
-# Copy the Conda environment and application code from the builder stage
-COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/micromamba $HOME/micromamba
-COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/bin $HOME/bin
-COPY --from=builder --chown=$APPUSER:$APPUSER $HOME/$DIR_NAME $HOME/$DIR_NAME
-WORKDIR $HOME/$DIR_NAME
-
-# Set the environment variables
-ENV MAMBA_ROOT_PREFIX=$HOME/micromamba
-ENV PATH=$HOME/bin:$HOME/.local/bin:$PATH
-RUN micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX
-
-# Precompute series for SO(2) and SO(3) groups
-RUN micromamba run -n ${ENV_NAME} python utils/precompute_series.py
-
-# Expose ports for streamlit and gradio
-EXPOSE 7860 8501
-
-# Default command
-CMD ["sh", "-c", "micromamba run -n ${ENV_NAME} python utils/print_device.py"]
+# Use the startup script
+CMD ["/home/appuser/start.sh"]
