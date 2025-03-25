@@ -17,7 +17,11 @@ RUN echo '#!/bin/bash' > /tmp/find_diffdock.sh && \
     DIFFDOCK_DIR=$(/tmp/find_diffdock.sh) && \
     mkdir -p $DIFFDOCK_DIR && \
     cp /tmp/diffdock_files/infer.py $DIFFDOCK_DIR/ && \
-    mkdir -p $DIFFDOCK_DIR/results $DIFFDOCK_DIR/test_folding && \
+    mkdir -p $DIFFDOCK_DIR/results $DIFFDOCK_DIR/test_folding
+
+# Install new dependencies in the diffdock environment
+RUN /home/appuser/bin/micromamba install -y -n diffdock -c conda-forge rdkit && \
+    /home/appuser/bin/micromamba install -y -n diffdock -c conda-forge mdanalysis && \
     echo "export DIFFDOCK_DIR=$DIFFDOCK_DIR" > /home/appuser/.diffdock_path
 
 # Install micromamba if it's not already installed
