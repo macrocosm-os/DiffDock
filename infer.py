@@ -30,7 +30,6 @@ def run_inference(pdb_path: str, ligand: str, complex_name: str):
 async def merge(
     pdb_file: UploadFile = File(...),
     ligand_file: UploadFile = File(...),
-    output_path: str = Form(...)
 ):
     """
     Merge a protein and a ligand PDB file and save the result to a new file.
@@ -38,8 +37,8 @@ async def merge(
     Args:
         pdb_file: The protein PDB file.
         ligand_file: The ligand PDB file.
-        output_path: The path to save the merged file.
     """
+    output_path = "result.pdb"
     try:
         ligand = Chem.MolFromMolFile(ligand_file.file)
         Chem.MolToPDBFile(ligand, output_path)
@@ -48,6 +47,8 @@ async def merge(
         ligand = mda.Universe(ligand_file.file)
         combined = mda.Merge(protein.atoms, ligand.atoms)
         combined.atoms.write(output_path)
+
+        return FileResponse(output_path, media_type="chemical/x-sdf", filename=f"result.sdf")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -67,8 +68,8 @@ async def infer(
         mock (bool, optional): Whether to run a mock inference. Defaults to Form(False).
 
     Raises:
-        HTTPException: _description_
-        HTTPException: _description_
+        HTTPException: If the inference fails.
+        HTTPException: If the output file is not found.
 
     Returns:
         FileResponse: The predicted complex.
