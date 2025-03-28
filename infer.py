@@ -7,6 +7,9 @@ from rdkit import Chem
 import MDAnalysis as mda
 from inference import main as inference_main, get_parser as inference_get_parser
 
+import tempfile
+import traceback
+
 app = FastAPI()
 
 def run_inference(pdb_path: str, ligand: str, complex_name: str):
@@ -36,21 +39,52 @@ async def merge(
 
     Args:
         pdb_file: The protein PDB file.
-        ligand_file: The ligand PDB file.
+        ligand_file: The ligand SDF file.
     """
-    output_path = "result.pdb"
+    output_ligand_pdb_path = "ligand_output.pdb"
+    output_path = "merged_result.pdb"
+    temp_files = []
+    
     try:
-        ligand = Chem.MolFromMolFile(ligand_file.file)
-        Chem.MolToPDBFile(ligand, output_path)
+        # Save the uploaded files to temporary files
+        temp_ligand_path = tempfile.NamedTemporaryFile(delete=False, suffix=".sdf").name
+        temp_files.append(temp_ligand_path)
+        with open(temp_ligand_path, "wb") as f:
+            f.write(await ligand_file.read())
+            
+        temp_protein_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdb").name
+        temp_files.append(temp_protein_path)
+        with open(temp_protein_path, "wb") as f:
+            f.write(await pdb_file.read())
+        
+        # Load the ligand with RDKit - now passing a string path
+        ligand_mol = Chem.MolFromMolFile(temp_ligand_path)
+        if ligand_mol is None:
+            raise HTTPException(status_code=400, detail="Invalid ligand file format")
+            
 
-        protein = mda.Universe(pdb_file.file)
-        ligand = mda.Universe(ligand_file.file)
+        Chem.MolToPDBFile(mol = ligand_mol, filename = output_ligand_pdb_path)
+
+        # Load structures with MDAnalysis
+        protein = mda.Universe(temp_protein_path)
+        ligand = mda.Universe(output_ligand_pdb_path)
+        
+        # Merge the structures
         combined = mda.Merge(protein.atoms, ligand.atoms)
         combined.atoms.write(output_path)
-
-        return FileResponse(output_path, media_type="chemical/x-sdf", filename=f"result.sdf")
+        
+        # Return the merged file
+        return FileResponse(output_path, media_type="chemical/x-pdb", filename="result.pdb")
+    
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    
+    finally:
+        # Clean up temporary files
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
 
 @app.post("/infer")
 async def infer(
